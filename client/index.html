@@ -204,10 +204,9 @@
           autofocus
         />
         <input
-          type="text"
+          type="password"
           id="tokenInput"
-          placeholder="Token (SECRET_TOKEN_123)"
-          value="SECRET_TOKEN_123"
+          placeholder="Votre token d'authentification"
         />
         <button id="connectBtn">Se connecter</button>
       </div>
@@ -257,7 +256,12 @@
         }
 
         if (!token) {
-          showError("Veuillez entrer un token");
+          showError("Veuillez entrer un token d'authentification");
+          return;
+        }
+
+        if (token.length < 8) {
+          showError("Le token doit contenir au moins 8 caractères");
           return;
         }
 
