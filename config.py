@@ -28,7 +28,7 @@ class Config:
     # Logging configuration
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
     LOG_FORMAT = os.getenv('LOG_FORMAT', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    LOG_FILE = os.getenv('LOG_FILE', 'chat_server.log')
+    LOG_FILE = os.getenv('LOG_FILE', 'logs/chat_server.log')
     
     # Validation
     @classmethod
