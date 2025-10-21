@@ -3,9 +3,9 @@
 import asyncio
 import websockets
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlparse, parse_qs
-
+from websockets.asyncio.server import ServerConnection
 import os
 from dotenv import load_dotenv
 
@@ -15,11 +15,13 @@ load_dotenv()
 if not (SECRET_TOKEN := os.getenv('SECRET_TOKEN')):
     raise ValueError("SECRET_TOKEN is not set")
 
-connected_clients = set()
+connected_clients : dict[ServerConnection, str] = {}
 
-async def handler(websocket):
+
+
+async def handler(websocket : ServerConnection):
     """Gestion d'une connexion WebSocket"""
-    
+    print(f"🔗 Nouvelle connexion: {websocket}")
     parsed = urlparse(websocket.request.path)
     params = parse_qs(parsed.query)
     token = params.get("token", [None])[0]
@@ -27,13 +29,23 @@ async def handler(websocket):
     if token != SECRET_TOKEN:
         await websocket.close(1008, 'Unauthorized')
         return
-
-    # Connexion validée
-    connected_clients.add(websocket)
+    
+    current_username = "Anonyme"
+    if connected_clients.get(websocket) != "Anonyme":
+        current_username = connected_clients.get(websocket)
+    else:
+        connected_clients[websocket] = "Anonyme"
     print(f"✅ Nouvelle connexion (total: {len(connected_clients)})")
 
-    # TODO : Broadcast notification user_joined (nécessite stocker username)
-    u
+    broadcast_data = {
+        'type': 'user_joined',
+        'username': current_username
+    }
+    for client in connected_clients:
+        print("broadcast message sent")
+        await client.send(json.dumps(broadcast_data))
+
+
 
     try:
         async for message in websocket:
@@ -41,32 +53,69 @@ async def handler(websocket):
             data = json.loads(message)
 
             if data['type'] == 'message':
-                # TODO : Broadcast à tous les clients
-                # Ajouter timestamp
-                # Format : {"type": "message", "username": "...", "text": "...", "timestamp": "..."}
-
+                username = data.get('username', 'Anonyme')
+                if connected_clients.get(websocket) != username:
+                    connected_clients[websocket] = username
+                text = data.get('text', '')
                 broadcast_data = {
                     'type': 'message',
-                    'username': data['username'],
-                    'text': data['text'],
-                    'timestamp': datetime.utcnow().isoformat() + 'Z'
+                    'username': username,
+                    'text': text,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 }
 
                 # Broadcast à tous les clients connectés
-                websockets.broadcast(connected_clients, json.dumps(broadcast_data))
+                for client in connected_clients:
+                    await client.send(json.dumps(broadcast_data))
 
+            if data['type'] == 'user_joined':
+                username = data.get('username', 'Anonyme')
+                print(f"username: {username}")
+                if connected_clients.get(websocket) != username:
+                    connected_clients[websocket] = username
+                broadcast_data = {
+                    'type': 'user_joined',
+                    'username': username
+                }
+                for client in connected_clients:
+                    await client.send(json.dumps(broadcast_data))
+                print(f"📢 {username} a rejoint le chat")
+
+            # if data['type'] == 'user_left':
+            #     username = data.get('username', 'Anonyme')
+            #     if websocket in connected_clients:
+            #         del connected_clients[websocket]
+            #         broadcast_data = {
+            #             'type': 'user_left',
+            #             'username': username
+            #         }
+            #         for client in connected_clients:
+            #             await client.send(json.dumps(broadcast_data))
+            #         print(f"📉 {username} a quitté le chat")
+
+    
     except websockets.ConnectionClosed:
         print("❌ Connexion fermée")
+    except Exception as e:
+        print(f"❌ Erreur inattendue: {e}")
     finally:
-        connected_clients.remove(websocket)
-        print(f"📉 Client déconnecté (total: {len(connected_clients)})")
+        if websocket in connected_clients:
+            username_to_broadcast = connected_clients.pop(websocket)
+            broadcast_data = {
+                'type': 'user_left',
+                'username': username_to_broadcast
+            }
+            for client in connected_clients:
+                await client.send(json.dumps(broadcast_data))
+            print(f"📉 {username_to_broadcast} a quitté le chat (total: {len(connected_clients)})")
+        else:
+            print(f"❌ Une personne non trouvée dans la liste des clients connectés s'est déconnectée")
 
-        # TODO : Broadcast notification user_left
 
 async def main():
     print("🚀 Serveur WebSocket démarré sur ws://localhost:8080")
     async with websockets.serve(handler, "0.0.0.0", 8080):
-        await asyncio.Future()  # Run forever
+        await asyncio.Future()
 
 if __name__ == "__main__":
     asyncio.run(main())
